@@ -10,6 +10,7 @@ use Modules\Articles\Models\Article;
 use Modules\Banners\Models\Banner;
 use Modules\Categories\Models\Category;
 use Modules\Menus\Models\Menu;
+use Modules\Products\Http\Resources\ProductCardResource;
 use Modules\Products\Models\Product;
 use Modules\Products\Models\ProductVariant;
 use Modules\Settings\Models\Setting;
@@ -67,12 +68,15 @@ class FrontController extends Controller
             'data'    => $data
         ], 200);
     }
-   
+
     public function HomeProducts()
     {
         $categories = Category::with([
             'products' => function ($q) {
-                $q->where('status', 'published')->latest()->take(8);
+                $q->where('status', 'published')
+                    ->with(['variants.values.attribute'])
+                    ->latest()
+                    ->take(8);
             }
         ])
             ->where('show_products_in_home', true)
@@ -81,7 +85,7 @@ class FrontController extends Controller
         $result = $categories->map(function ($category) {
             return [
                 'category' => $category,
-                'products' => $category->products,
+                'products' => ProductCardResource::collection($category->products),
             ];
         });
 
@@ -91,10 +95,14 @@ class FrontController extends Controller
     {
         $data = [];
         $data['selected_categories'] = Category::where('show_in_home', 1)->get();
-        $data['top_discounted_products'] = Product::topDiscounted();
+        $data['top_discounted_products'] = ProductCardResource::collection(
+            Product::topDiscounted()
+        );
         $data['banners'] = Banner::groupedByPosition();
         $data['sliders'] = Slider::orderBy('id')->get();
-        $data['new_products'] = Product::latestProducts();
+        $data['new_products'] = ProductCardResource::collection(
+            Product::latestProducts()
+        );
         $data['blogs'] = Article::latestArticles();
         return response()->json([
             'success' => true,
