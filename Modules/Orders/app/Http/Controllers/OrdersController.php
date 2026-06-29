@@ -3,6 +3,7 @@
 namespace Modules\Orders\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Services\SmsService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,7 @@ use Modules\Orders\Http\Requests\OrderStoreRequest;
 use Modules\Orders\Http\Requests\OrderUpdateRequest;
 use Modules\Orders\Models\Order;
 use Modules\Products\Models\ProductVariant;
+use Modules\Shipping\Models\Shipping;
 use Modules\Shipping\Models\ShippingMethod;
 use Modules\Shipping\Services\ShippingService;
 use Modules\Users\Models\User;
@@ -252,10 +254,12 @@ class OrdersController extends Controller
         $order->save();
         $notifications->create(
             "تغییر وضعیت",
-            " یک سفارش رد سیستم تغییر وضعیت پیدا کرد",
+            " یک سفارش در سیستم تغییر وضعیت پیدا کرد",
             "notification_order",
             ['order' => $order->id]
         );
+        $smsService = new SmsService();
+        $smsService->sendToKavenegar('change-order-status', $order->user->mobile, $order->id, ['token20' => $order->user->getDisplayName($order->address->receiver_name), 'token2' => $order->status_label]);
         return response()->json([
             'message' => 'وضعیت سفارش با موفقیت تغییر کرد',
             'order'   => $order->load(['items', 'user', 'address', 'shippingMethod'])
@@ -319,7 +323,7 @@ class OrdersController extends Controller
         }
 
         // 6. محاسبه هزینه حمل و نقل
-        $shippingMethod = ShippingMethod::findOrFail($request->shipping_method_id);
+        $shippingMethod = Shipping::findOrFail($request->shipping_method_id);
         $shippingCost = (new ShippingService)->calculateCost(
             $request->shipping_method_id,
             $address->province_id,
@@ -438,6 +442,9 @@ class OrdersController extends Controller
                 "notification_order",
                 ['order' => $order->id]
             );
+            $smsService = new SmsService();
+            $smsService->sendToKavenegar('customer-order', $user->mobile, $order->id, ['token20' => $user->getDisplayName($address->receiver_name)]);
+            $smsService->sendToAdmins('customer-order-admin', $order->id);
             return response()->json([
                 'order' => $order->load('items'),
                 'message' => 'سفارش با موفقیت ثبت شد و از کیف پول پرداخت شد'
@@ -520,7 +527,7 @@ class OrdersController extends Controller
             ], 400);
         }
 
-        $selectedMethod = ShippingMethod::where('id', $request->shipping_method_id)
+        $selectedMethod = Shipping::where('id', $request->shipping_method_id)
             ->where('status', true)
             ->with('ranges')
             ->first();
